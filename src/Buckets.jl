@@ -1,4 +1,4 @@
-module BinningAlgorithms
+module Buckets
 
 using Statistics
 using LoopVectorization
@@ -141,4 +141,4 @@ end
 
 export bincontiguous
 
-end # module BinningAlgorithms
+end # module Buckets

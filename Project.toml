@@ -1,5 +1,5 @@
-name = "BinningAlgorithms"
-uuid = "12820159-d3e8-4c7c-8ff1-745485c98f07"
+name = "Buckets"
+uuid = "3235f445-51d8-4100-901d-5b23398ac3ab"
 authors = ["fjebaker <fergusbkr@gmail.com>"]
 version = "0.1.0"
 

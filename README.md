@@ -1,4 +1,6 @@
-# BinningAlgorithms
+# Buckets
+
+Julia binning algorithms.
 
 Work in progress...
 
