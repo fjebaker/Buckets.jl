@@ -1,12 +1,56 @@
 module Buckets
 
 using Statistics
-using LoopVectorization
+using Base.Threads: @threads 
 
+abstract type AbstractBucketAlgorithm end
+struct Simple end
 
-@inline function _get_bin_index(x, bins, last_bin)
+_bin_1d_unsafe!(A::AbstractBucketAlgorithm, args...) = error("$A is not implemented for this input format.")
+_bin_2d_unsafe!(A::AbstractBucketAlgorithm, args...) = error("$A is not implemented for this input format.")
+
+function _bin_1d_unsafe!(::Simple, output, noutput, X, y, bins)
+    last_bin = lastindex(bins)
+
+    @fastmath @inbounds @threads for i in eachindex(X)
+        bin_index = find_bin_index(X[i], bins, last_bin)
+
+        output[bin_index] += y[i]
+        noutput[bin_index] += 1
+    end
+end
+
+function _bin_2d_unsafe!(::Simple, output, noutput, X1, X2, y::AbstractMatrix, bins1, bins2)
+    last_bin1 = lastindex(bins1)
+    last_bin2 = lastindex(bins2)
+
+    @fastmath @inbounds @threads for i in eachindex(X1)
+        bin_row = find_bin_index(X1[i], bins1, last_bin1)
+        for j in eachindex(X2)
+            bin_column = find_bin_index(X2[j], bins2, last_bin2)
+
+            output[bin_column, bin_row] += y[bin_column, bin_row]
+            noutput[bin_column, bin_row] += 1
+        end
+    end
+end
+
+function _bin_2d_unsafe!(::Simple, output, noutput, X1, X2, y::AbstractVector, bins1, bins2)
+    last_bin1 = lastindex(bins1)
+    last_bin2 = lastindex(bins2)
+
+    @fastmath @inbounds @threads for i in eachindex(X1)
+        bin_column = find_bin_index(X1[i], bins1, last_bin1)
+        bin_row = find_bin_index(X2[i], bins2, last_bin2)
+
+        output[bin_column, bin_row] += y[i]
+        noutput[bin_column, bin_row] += 1
+    end
+end
+
+@inline function find_bin_index(x, bins, last_bin)
     _bin_low = searchsortedfirst(bins, x)
-    _bin_low > last_bin ? last_bin : _bin_low
+    min(_bin_low, last_bin)
 end
 
 function _check_bin_args(output, noutput, X, y, bins)
@@ -36,60 +80,30 @@ function _check_bin_args(output, noutput, X1, X2, y::AbstractMatrix, bins1, bins
     end
 end
 
-function _fast_sorted_single_dim_binning!(output, noutput, X, y, bins)
+function _check_sorted(X)
+    if !issorted(X)
+        error("Input `X` is not sorted. `X` and `y` should be sorted together (e.g. with `sortperm`).")
+    end
+end
+
+@inline function _bin_1d_safe!(alg, output, noutput, X, y, bins)
     _check_bin_args(output, noutput, X, y, bins)
-
-    last_bin = lastindex(bins)
-    @tturbo warn_check_args = true for i in eachindex(X)
-        bin_index = _get_bin_index(X[i], bins, last_bin)
-
-        output[bin_index] += y[i]
-        noutput[bin_index] += 1
-    end
+    _bin_1d_unsafe!(alg, output, noutput, X, y, bins)
 end
 
-function _fast_2d_contiguous_binning!(output, noutput, X1, X2, y::AbstractMatrix, bins1, bins2)
-    _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
-
-    last_bin1 = lastindex(bins1)
-    last_bin2 = lastindex(bins2)
-
-    @tturbo warn_check_args = true for i in eachindex(X1)
-        bin_row = _get_bin_index(X1[i], bins1, last_bin1)
-        for j in eachindex(X2)
-            bin_column = _get_bin_index(X2[j], bins2, last_bin2)
-
-            output[bin_column, bin_row] += y[bin_column, bin_row]
-            noutput[bin_column, bin_row] += 1
-        end
-    end
+@inline function _bin_2d_safe!(alg, output, noutput, X1, X2, y, bins1, bins2)
+    _check_bin_args(output, noutput, X, y, bins)
+    _bin_2d_unsafe!(alg, output, noutput, X, y, bins)
 end
 
-function _fast_2d_contiguous_binning!(output, noutput, X1, X2, y::AbstractVector, bins1, bins2)
-    _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
-
-    last_bin1 = lastindex(bins1)
-    last_bin2 = lastindex(bins2)
-
-    @tturbo warn_check_args = true for i in eachindex(X1)
-        bin_column = _get_bin_index(X1[i], bins1, last_bin1)
-        bin_row = _get_bin_index(X2[i], bins2, last_bin2)
-
-        output[bin_column, bin_row] += y[i]
-        noutput[bin_column, bin_row] += 1
-    end
-end
-
-@inline function _apply_reduction!(output, noutput, ::typeof(sum))
+_apply_reduction!(output, _, ::typeof(sum)) = 
     output
-end
 
-@inline function _apply_reduction!(output, noutput, ::typeof(mean))
+_apply_reduction!(output, noutput, ::typeof(mean)) =
     @. output = output / noutput
-end
 
 """
-    bincontiguous(X, y, bins; kwargs...)
+    bucket(X, y, bins, alg=Simple(); kwargs...)
 
 Bin data in `y` by `X` into `bins`, that is to say, reduce the `y` data corresponding to coordinates `X` over
 domain ranges given by `bins`. 
@@ -102,21 +116,36 @@ This function, and its dispatches, accept the following keyword arguments
 
 - `reduction=sum`: a statistical function used to reduce all `y` in a given bin. 
 """
-function bincontiguous(
+function bucket(
     X::AbstractVector{T},
     y::AbstractVector{T},
-    bins;
-    reduction = sum,
+    bins,
+    alg=Simple()
+    ;
+    kwargs...
 ) where {T}
     output = zeros(T, size(bins))
     noutput = zeros(Int, size(output))
-    _fast_contiguous_binning!(output, noutput, X, y, bins)
+    bucket!(output, noutput, X, y, bins, alg; kwargs...) 
+end
+
+function bucket!(
+    output,
+    noutput,
+    X::AbstractVector{T},
+    y::AbstractVector{T},
+    bins,
+    alg=Simple()
+    ;
+    reduction = sum,
+) where {T}
+    _bin_1d_safe!(alg, output, noutput, X, y, bins)
     _apply_reduction!(output, noutput, reduction)
     output
 end
 
 """
-    bincontiguous(X1, X2, y, bins1, bins2; kwargs...)
+    bucket(X1, X2, y, bins1, bins2, alg=Simple(); kwargs...)
 
 Two dimensional contiguous binning, where `y` can either be
 
@@ -124,21 +153,38 @@ Two dimensional contiguous binning, where `y` can either be
 and `bins1` (`bins2`) the bin edges for `X1` (`X2`).
 - `AbstractVector`: `X1` and `X2` are effectively the coordinates of `y`
 """
-function bincontiguous(
+function bucket(
     X1::AbstractVector{T},
     X2::AbstractVector{T},
     y::AbstractArray{T},
     bins1,
-    bins2;
-    reduction = sum,
+    bins2,
+    alg=Simple()
+    ;
+    kwargs...
 ) where {T}
     output = zeros(T, (length(bins1), length(bins2)))
     noutput = zeros(Int, size(output))
-    _fast_2d_contiguous_binning!(output, noutput, X1, X2, y, bins1, bins2)
+    bucket!(output, noutput, X1, X2, y, bins1, bins2, alg; kwargs...)
+end
+
+function bucket!(
+    output,
+    noutput,
+    X1::AbstractVector{T},
+    X2::AbstractVector{T},
+    y::AbstractArray{T},
+    bins1,
+    bins2,
+    alg=Simple()
+    ;
+    reduction = sum
+    ) where {T}
+    _bin_2d_safe!(alg, output, noutput, X1, X2, y, bins1, bins2)
     _apply_reduction!(output, noutput, reduction)
     output
 end
 
-export bincontiguous
+export bucket, bucket!, Simple, AbstractBucketAlgorithm
 
 end # module Buckets
