@@ -5,22 +5,81 @@ using Base.Threads: @threads
 
 abstract type AbstractBucketAlgorithm end
 struct Simple end
+struct DownSample end
 
-_bin_1d_unsafe!(A::AbstractBucketAlgorithm, args...) = error("$A is not implemented for this input format.")
-_bin_2d_unsafe!(A::AbstractBucketAlgorithm, args...) = error("$A is not implemented for this input format.")
+@inline function find_bin_index(x, bins)
+    searchsortedfirst(bins, x) 
+end
 
-function _bin_1d_unsafe!(::Simple, output, noutput, X, y, bins)
-    last_bin = lastindex(bins)
+@inline function find_bin_index(x, bins, last_bin)
+    _bin_low = find_bin_index(x, bins)
+    min(_bin_low, last_bin)
+end
 
-    @fastmath @inbounds @threads for i in eachindex(X)
-        bin_index = find_bin_index(X[i], bins, last_bin)
-
-        output[bin_index] += y[i]
-        noutput[bin_index] += 1
+function _check_X_y(X, y)
+    if size(X) != size(y)
+        error("Dimensions mismatch for X and y.")
     end
 end
 
-function _bin_2d_unsafe!(::Simple, output, noutput, X1, X2, y::AbstractMatrix, bins1, bins2)
+function _check_X_y(X1, X2, y::AbstractVector)
+    if (size(X1) != size(X2)) || (size(X1) != size(y))
+        error("Dimensions mismatch for X1, X2 and y.")
+    end
+end 
+
+function _check_X_y(X1, X2, y::AbstractMatrix)
+    if (size(X1, 1), size(X2, 1)) != size(y)
+        error("Dimensions mismatch for X1, X2 and y.")
+    end
+end 
+
+function _check_bin_output_args(output, noutput, bins1, bins2)
+    _check_sorted(bins1)
+    _check_sorted(bins2)
+    if ((size(bins1, 1), size(bins2, 1)) != size(output)) || size(output) != size(noutput)
+        error("Dimension mistmatch between output arrays and bins.")
+    end
+end
+
+function _check_bin_output_args(output, noutput, bins)
+    _check_sorted(bins)
+    if (size(output) != size(bins)) || (size(output) != size(noutput))
+        error("Dimension mistmatch between output arrays and bins.")
+    end
+end
+
+function _check_bin_output_args(output, bins)
+    _check_sorted(bins)
+    if (size(output) != size(bins))
+        error("Dimension mistmatch between output arrays and bins.")
+    end
+end
+
+function _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
+    _check_X_y(X1, X2, y)
+    _check_bin_output_args(output, noutput, bins1, bins2)
+end
+
+function _check_bin_args(output, noutput, X, y, bins)
+    _check_X_y(X, y)
+    _check_bin_output_args(output, noutput, bins)
+end
+
+function _check_sorted(X)
+    if !issorted(X)
+        error("Input `X` is not sorted. `X` and `y` should be sorted together (e.g. with `sortperm`).")
+    end
+end
+
+_apply_reduction!(output, _, ::typeof(sum)) = 
+    output
+
+_apply_reduction!(output, noutput, ::typeof(mean)) =
+    @. output = output / noutput
+
+function bucket!(::Simple, output, noutput, X1, X2, y::AbstractMatrix, bins1, bins2; reduction=mean)
+    _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
     last_bin1 = lastindex(bins1)
     last_bin2 = lastindex(bins2)
 
@@ -32,10 +91,14 @@ function _bin_2d_unsafe!(::Simple, output, noutput, X1, X2, y::AbstractMatrix, b
             output[bin_column, bin_row] += y[bin_column, bin_row]
             noutput[bin_column, bin_row] += 1
         end
-    end
+    end  
+    _apply_reduction!(output, noutput, reduction)
+    output
 end
 
-function _bin_2d_unsafe!(::Simple, output, noutput, X1, X2, y::AbstractVector, bins1, bins2)
+function bucket!(::Simple, output, noutput, X1, X2, y::AbstractVector, bins1, bins2; reduction=mean)
+    _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
+
     last_bin1 = lastindex(bins1)
     last_bin2 = lastindex(bins2)
 
@@ -46,64 +109,126 @@ function _bin_2d_unsafe!(::Simple, output, noutput, X1, X2, y::AbstractVector, b
         output[bin_column, bin_row] += y[i]
         noutput[bin_column, bin_row] += 1
     end
-end
 
-@inline function find_bin_index(x, bins, last_bin)
-    _bin_low = searchsortedfirst(bins, x)
-    min(_bin_low, last_bin)
-end
-
-function _check_bin_args(output, noutput, X, y, bins)
-    if size(X) != size(y)
-        error("Dimensions mismatch for X and y.")
-    end
-    if (size(output) != size(bins)) || (size(output) != size(noutput))
-        error("Dimension mistmatch between output arrays and bins.")
-    end
-end
-
-function _check_bin_args(output, noutput, X1, X2, y::AbstractVector, bins1, bins2)
-    if (size(X1) != size(X2)) || (size(X1) != size(y))
-        error("Dimensions mismatch for X1, X2 and y.")
-    end
-    if ((size(bins1, 1), size(bins2, 1)) != size(output)) || size(output) != size(noutput)
-        error("Dimension mistmatch between output arrays and bins.")
-    end
-end
-
-function _check_bin_args(output, noutput, X1, X2, y::AbstractMatrix, bins1, bins2)
-    if (size(X1, 1), size(X2, 1)) != size(y)
-        error("Dimensions mismatch for X1, X2 and y.")
-    end
-    if ((size(bins1, 1), size(bins2, 1)) != size(output)) || size(output) != size(noutput)
-        error("Dimension mistmatch between output arrays and bins.")
-    end
-end
-
-function _check_sorted(X)
-    if !issorted(X)
-        error("Input `X` is not sorted. `X` and `y` should be sorted together (e.g. with `sortperm`).")
-    end
-end
-
-@inline function _bin_1d_safe!(alg, output, noutput, X, y, bins)
-    _check_bin_args(output, noutput, X, y, bins)
-    _bin_1d_unsafe!(alg, output, noutput, X, y, bins)
-end
-
-@inline function _bin_2d_safe!(alg, output, noutput, X1, X2, y, bins1, bins2)
-    _check_bin_args(output, noutput, X, y, bins)
-    _bin_2d_unsafe!(alg, output, noutput, X, y, bins)
-end
-
-_apply_reduction!(output, _, ::typeof(sum)) = 
+    _apply_reduction!(output, noutput, reduction)
     output
+end
 
-_apply_reduction!(output, noutput, ::typeof(mean)) =
-    @. output = output / noutput
+function bucket!(::Simple, output, noutput, X, y, bins; reduction=mean)
+    _check_bin_args(output, noutput, X, y, bins)
+    last_bin = lastindex(bins)
+
+    @fastmath @inbounds @threads for i in eachindex(X)
+        bin_index = find_bin_index(X[i], bins, last_bin)
+
+        output[bin_index] += y[i]
+        noutput[bin_index] += 1
+    end
+
+    _apply_reduction!(output, noutput, reduction)
+    output
+end
 
 """
-    bucket(X, y, bins, alg=Simple(); kwargs...)
+    bucket!(::DownSample, output, X, y, bins)
+
+Down-sample the values in `y` in current bins `X` to fewer bins in `bins`.
+```
+            x₁   Δx   x₂        x₃
+  |         |---Δx----|         |
+ *                *                *
+            |--B--|-C-|
+```
+
+```math
+\\gamma = \\min \\left( \\frac{B}{\\Delta x}, 1 \\right)
+```
+
+"""
+function bucket!(::DownSample, output, X, y, bins)
+    _check_X_y(X, y)
+    _check_bin_output_args(output, bins)
+    _check_sorted(X)
+    # additionally need to make sure fewer bins than X
+    if length(X) > length(bins)
+        error("DownSample requires length of bins to be less than or equal to length of X.")
+    end
+
+    last_bin = lastindex(bins)
+    last_x = lastindex(X)
+
+    start = find_bin_index(first(bins), X)
+    if start >= last_x
+        # nothing to rebin
+        return output
+    end
+
+    # special case for first bin
+    @inbounds if start > 1
+        x₁= X[start-1]
+        x₂ = X[start]
+        b₁ = bins[1]
+
+        # find ratio of lengths
+        Δx = x₂ - x₁
+        Δb = x₂ - b₁
+        γ = min(Δb / Δx, 1)
+        output[1] = y[start-1] * (1 - γ)
+    end
+
+    @fastmath @inbounds @threads for i in start:(last_x-1)
+        x₁= X[i]
+        x₂ = X[i+1]
+
+        j = find_bin_index(x₁, bins)
+        if j+1 > last_bin
+            break
+        end
+
+        b₂ = bins[j+1]
+
+        # find ratio of lengths
+        Δx = x₂ - x₁
+        Δb = b₂ - x₁
+        γ = min(Δb / Δx, 1)
+
+        output[j] = y[i] * γ
+        # carry over
+        output[j+1] = y[i+1] * (1 - γ) 
+    end
+    output
+end
+
+function allocate_output(::DownSample, X, y::AbstractArray{T}, bins) where {T}
+    output = zeros(T, length(bins))
+    (output,)
+end
+
+function allocate_output(::AbstractBucketAlgorithm, X, y::AbstractArray{T}, bins; kwargs...) where {T}
+    output = zeros(T, length(bins))
+    noutput = similar(output)
+    (output, noutput)
+end
+
+function allocate_output(::AbstractBucketAlgorithm, X1, X2, y::AbstractArray{T}, bins1, bins2; kwargs...) where {T}
+    output = zeros(T, (length(bins1), length(bins2)))
+    noutput = similar(output)
+    (output, noutput)
+end
+
+function bucket(
+    alg::AbstractBucketAlgorithm,
+    args...; kwargs...
+)
+    allocated_outputs = allocate_output(alg, args...; kwargs...)
+    bucket!(alg, allocated_outputs..., args...; kwargs...)
+end 
+
+"""
+    bucket(X, y, bins; kwargs...)
+    bucket(alg::AbstractBucketAlgorithm, args...; kwargs...)
+
+Defaults to the [`Simple`](@ref) algorithm if `alg` unspecified.
 
 Bin data in `y` by `X` into `bins`, that is to say, reduce the `y` data corresponding to coordinates `X` over
 domain ranges given by `bins`. 
@@ -116,33 +241,7 @@ This function, and its dispatches, accept the following keyword arguments
 
 - `reduction=sum`: a statistical function used to reduce all `y` in a given bin. 
 """
-function bucket(
-    X::AbstractVector{T},
-    y::AbstractVector{T},
-    bins,
-    alg=Simple()
-    ;
-    kwargs...
-) where {T}
-    output = zeros(T, size(bins))
-    noutput = zeros(Int, size(output))
-    bucket!(output, noutput, X, y, bins, alg; kwargs...) 
-end
-
-function bucket!(
-    output,
-    noutput,
-    X::AbstractVector{T},
-    y::AbstractVector{T},
-    bins,
-    alg=Simple()
-    ;
-    reduction = sum,
-) where {T}
-    _bin_1d_safe!(alg, output, noutput, X, y, bins)
-    _apply_reduction!(output, noutput, reduction)
-    output
-end
+bucket(X, y, bins; kwargs...) = bucket(Simple(), X, y, bins; kwargs...)
 
 """
     bucket(X1, X2, y, bins1, bins2, alg=Simple(); kwargs...)
@@ -153,37 +252,7 @@ Two dimensional contiguous binning, where `y` can either be
 and `bins1` (`bins2`) the bin edges for `X1` (`X2`).
 - `AbstractVector`: `X1` and `X2` are effectively the coordinates of `y`
 """
-function bucket(
-    X1::AbstractVector{T},
-    X2::AbstractVector{T},
-    y::AbstractArray{T},
-    bins1,
-    bins2,
-    alg=Simple()
-    ;
-    kwargs...
-) where {T}
-    output = zeros(T, (length(bins1), length(bins2)))
-    noutput = zeros(Int, size(output))
-    bucket!(output, noutput, X1, X2, y, bins1, bins2, alg; kwargs...)
-end
-
-function bucket!(
-    output,
-    noutput,
-    X1::AbstractVector{T},
-    X2::AbstractVector{T},
-    y::AbstractArray{T},
-    bins1,
-    bins2,
-    alg=Simple()
-    ;
-    reduction = sum
-    ) where {T}
-    _bin_2d_safe!(alg, output, noutput, X1, X2, y, bins1, bins2)
-    _apply_reduction!(output, noutput, reduction)
-    output
-end
+bucket(X1, X2, y, bins1, bins2; kwargs...) = bucket(Simple(), X1, X2, y, bins1, bins2; kwargs...)
 
 export bucket, bucket!, Simple, AbstractBucketAlgorithm
 
