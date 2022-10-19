@@ -4,14 +4,14 @@ using Statistics
 
 export mean
 
-using Base.Threads: @threads 
+using Base.Threads: @threads
 
 abstract type AbstractBucketAlgorithm end
 struct Simple <: AbstractBucketAlgorithm end
 struct DownSample <: AbstractBucketAlgorithm end
 
 @inline function find_bin_index(x, bins)
-    searchsortedfirst(bins, x) 
+    searchsortedfirst(bins, x)
 end
 
 @inline function find_bin_index(x, bins, last_bin)
@@ -21,7 +21,11 @@ end
 
 function _check_X_y_delta(X, y, Δ)
     if length(X) != length(y) + Δ
-        throw(DimensionMismatch("For X with $(length(X)) elements, y must have $(length(X) - Δ) elements."))
+        throw(
+            DimensionMismatch(
+                "For X with $(length(X)) elements, y must have $(length(X) - Δ) elements.",
+            ),
+        )
     end
 end
 
@@ -35,13 +39,13 @@ function _check_X_y(X1, X2, y::AbstractVector)
     if (size(X1) != size(X2)) || (size(X1) != size(y))
         throw(DimensionMismatch("Dimensions mismatch for X1, X2 and y."))
     end
-end 
+end
 
 function _check_X_y(X1, X2, y::AbstractMatrix)
     if (size(X1, 1), size(X2, 1)) != size(y)
         throw(DimensionMismatch("Dimensions mismatch for X1, X2 and y."))
     end
-end 
+end
 
 function _check_bin_output_args(output, noutput, bins1, bins2)
     _check_sorted(bins1)
@@ -77,19 +81,29 @@ end
 
 function _check_sorted(X)
     if !issorted(X)
-        error("Input `X` is not sorted. `X` and `y` should be sorted together (e.g. with `sortperm`).")
+        error(
+            "Input `X` is not sorted. `X` and `y` should be sorted together (e.g. with `sortperm`).",
+        )
     end
 end
 
-_apply_reduction!(output, _, ::typeof(sum)) = 
-    output
+_apply_reduction!(output, _, ::typeof(sum)) = output
 
-_apply_reduction!(output, noutput, ::typeof(mean)) =
-    @. output = output / noutput
+_apply_reduction!(output, noutput, ::typeof(mean)) = @. output = output / noutput
 
 # Algorithms
 
-function bucket!(::Simple, output, noutput, X1, X2, y::AbstractMatrix, bins1, bins2; reduction=sum)
+function bucket!(
+    ::Simple,
+    output,
+    noutput,
+    X1,
+    X2,
+    y::AbstractMatrix,
+    bins1,
+    bins2;
+    reduction = sum,
+)
     _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
     last_bin1 = lastindex(bins1)
     last_bin2 = lastindex(bins2)
@@ -102,12 +116,22 @@ function bucket!(::Simple, output, noutput, X1, X2, y::AbstractMatrix, bins1, bi
             output[bin_column, bin_row] += y[bin_column, bin_row]
             noutput[bin_column, bin_row] += 1
         end
-    end  
+    end
     _apply_reduction!(output, noutput, reduction)
     output
 end
 
-function bucket!(::Simple, output, noutput, X1, X2, y::AbstractVector, bins1, bins2; reduction=sum)
+function bucket!(
+    ::Simple,
+    output,
+    noutput,
+    X1,
+    X2,
+    y::AbstractVector,
+    bins1,
+    bins2;
+    reduction = sum,
+)
     _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
 
     last_bin1 = lastindex(bins1)
@@ -125,7 +149,7 @@ function bucket!(::Simple, output, noutput, X1, X2, y::AbstractVector, bins1, bi
     output
 end
 
-function bucket!(::Simple, output, noutput, X, y, bins; reduction=sum)
+function bucket!(::Simple, output, noutput, X, y, bins; reduction = sum)
     _check_bin_args(output, noutput, X, y, bins)
     last_bin = lastindex(bins)
 
@@ -176,7 +200,7 @@ function bucket!(::DownSample, output, X, y, bins)
 
     # special case for first bin
     if start > 1
-        x₁= X[start-1]
+        x₁ = X[start-1]
         x₂ = X[start]
         b₁ = bins[1]
 
@@ -187,8 +211,8 @@ function bucket!(::DownSample, output, X, y, bins)
         output[1] += y[start-1] * (1 - γ)
     end
 
-    for i in start:(last_x-1)
-        x₁= X[i]
+    for i = start:(last_x-1)
+        x₁ = X[i]
         x₂ = X[i+1]
 
         j = find_bin_index(x₁, bins)
@@ -219,13 +243,27 @@ function allocate_output(::DownSample, X, y::AbstractArray{T}, bins) where {T}
     (output,)
 end
 
-function allocate_output(::AbstractBucketAlgorithm, X, y::AbstractArray{T}, bins; kwargs...) where {T}
+function allocate_output(
+    ::AbstractBucketAlgorithm,
+    X,
+    y::AbstractArray{T},
+    bins;
+    kwargs...,
+) where {T}
     output = zeros(T, length(bins))
     noutput = similar(output)
     (output, noutput)
 end
 
-function allocate_output(::AbstractBucketAlgorithm, X1, X2, y::AbstractArray{T}, bins1, bins2; kwargs...) where {T}
+function allocate_output(
+    ::AbstractBucketAlgorithm,
+    X1,
+    X2,
+    y::AbstractArray{T},
+    bins1,
+    bins2;
+    kwargs...,
+) where {T}
     output = zeros(T, (length(bins1), length(bins2)))
     noutput = similar(output)
     (output, noutput)
@@ -233,13 +271,10 @@ end
 
 # Allocating interface
 
-function bucket(
-    alg::AbstractBucketAlgorithm,
-    args...; kwargs...
-)
+function bucket(alg::AbstractBucketAlgorithm, args...; kwargs...)
     allocated_outputs = allocate_output(alg, args...; kwargs...)
     bucket!(alg, allocated_outputs..., args...; kwargs...)
-end 
+end
 
 """
     bucket(X, y, bins; kwargs...)
@@ -265,7 +300,8 @@ Two dimensional contiguous binning, where `y` can either be
 and `bins1` (`bins2`) the bin edges for `X1` (`X2`).
 - `AbstractVector`: `X1` and `X2` are effectively the coordinates of `y`
 """
-bucket(X1, X2, y, bins1, bins2; kwargs...) = bucket(Simple(), X1, X2, y, bins1, bins2; kwargs...)
+bucket(X1, X2, y, bins1, bins2; kwargs...) =
+    bucket(Simple(), X1, X2, y, bins1, bins2; kwargs...)
 
 export bucket, bucket!, Simple, DownSample, AbstractBucketAlgorithm
 
