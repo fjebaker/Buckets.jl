@@ -5,10 +5,13 @@ using Statistics
 export mean
 
 using Base.Threads: @threads
+import Base.size
 
 abstract type AbstractBucketAlgorithm end
-struct Simple <: AbstractBucketAlgorithm end
-struct DownSample <: AbstractBucketAlgorithm end
+
+include("valuebucket.jl")
+include("algorithms.jl")
+
 
 @inline function find_bin_index(x, bins)
     searchsortedfirst(bins, x)
@@ -47,36 +50,29 @@ function _check_X_y(X1, X2, y::AbstractMatrix)
     end
 end
 
-function _check_bin_output_args(output, noutput, bins1, bins2)
+function _check_bin_output_args(out_bucket, bins1, bins2)
     _check_sorted(bins1)
     _check_sorted(bins2)
-    if ((size(bins1, 1), size(bins2, 1)) != size(output)) || size(output) != size(noutput)
+    if ((size(bins1, 1), size(bins2, 1)) != size(out_bucket))
         throw(DimensionMismatch("Dimension mistmatch between output arrays and bins."))
     end
 end
 
-function _check_bin_output_args(output, noutput, bins)
+function _check_bin_output_args(out_bucket, bins)
     _check_sorted(bins)
-    if (size(output) != size(bins)) || (size(output) != size(noutput))
+    if (size(out_bucket) != size(bins))
         throw(DimensionMismatch("Dimension mistmatch between output arrays and bins."))
     end
 end
 
-function _check_bin_output_args(output, bins)
-    _check_sorted(bins)
-    if (size(output) != size(bins))
-        throw(DimensionMismatch("Dimension mistmatch between output arrays and bins."))
-    end
-end
-
-function _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
+function _check_bin_args(out_bucket, X1, X2, y, bins1, bins2)
     _check_X_y(X1, X2, y)
-    _check_bin_output_args(output, noutput, bins1, bins2)
+    _check_bin_output_args(out_bucket, bins1, bins2)
 end
 
-function _check_bin_args(output, noutput, X, y, bins)
+function _check_bin_args(out_bucket, X, y, bins)
     _check_X_y(X, y)
-    _check_bin_output_args(output, noutput, bins)
+    _check_bin_output_args(out_bucket, bins)
 end
 
 function _check_sorted(X)
@@ -87,193 +83,10 @@ function _check_sorted(X)
     end
 end
 
-_apply_reduction!(output, _, ::typeof(sum)) = output
-
-_apply_reduction!(output, noutput, ::typeof(mean)) = @. output = output / noutput
-
-# Algorithms
-
-function bucket!(
-    ::Simple,
-    output,
-    noutput,
-    X1,
-    X2,
-    y::AbstractMatrix,
-    bins1,
-    bins2;
-    reduction = sum,
-)
-    _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
-    last_bin1 = lastindex(bins1)
-    last_bin2 = lastindex(bins2)
-
-    for i in eachindex(X1)
-        bin_row = find_bin_index(X1[i], bins1, last_bin1)
-        for j in eachindex(X2)
-            bin_column = find_bin_index(X2[j], bins2, last_bin2)
-
-            output[bin_column, bin_row] += y[bin_column, bin_row]
-            noutput[bin_column, bin_row] += 1
-        end
-    end
-    _apply_reduction!(output, noutput, reduction)
-    output
-end
-
-function bucket!(
-    ::Simple,
-    output,
-    noutput,
-    X1,
-    X2,
-    y::AbstractVector,
-    bins1,
-    bins2;
-    reduction = sum,
-)
-    _check_bin_args(output, noutput, X1, X2, y, bins1, bins2)
-
-    last_bin1 = lastindex(bins1)
-    last_bin2 = lastindex(bins2)
-
-    for i in eachindex(X1)
-        bin_column = find_bin_index(X1[i], bins1, last_bin1)
-        bin_row = find_bin_index(X2[i], bins2, last_bin2)
-
-        output[bin_column, bin_row] += y[i]
-        noutput[bin_column, bin_row] += 1
-    end
-
-    _apply_reduction!(output, noutput, reduction)
-    output
-end
-
-function bucket!(::Simple, output, noutput, X, y, bins; reduction = sum)
-    _check_bin_args(output, noutput, X, y, bins)
-    last_bin = lastindex(bins)
-
-    for i in eachindex(X)
-        bin_index = find_bin_index(X[i], bins, last_bin)
-
-        output[bin_index] += y[i]
-        noutput[bin_index] += 1
-    end
-
-    _apply_reduction!(output, noutput, reduction)
-    output
-end
-
-"""
-    bucket!(::DownSample, output, X, y, bins)
-
-Down-sample the values in `y` in current bins `X` to fewer bins in `bins` by linearly
-splitting bins where they overlap a new bin edge.
-```
-            x₁   Δx   x₂        
-  |         |---Δx----|         |
- .                .                .
-            |--B--|-C-|
-```
-
-```math
-\\gamma = \\min \\left( \\frac{B}{\\Delta x}, 1 \\right)
-```
-"""
-function bucket!(::DownSample, output, X, y, bins)
-    _check_X_y_delta(X, y, 1)
-    _check_bin_output_args(output, bins)
-    _check_sorted(X)
-    # additionally need to make sure fewer bins than X
-    if length(X) < length(bins)
-        error("DownSample requires length of bins to be less than or equal to length of X.")
-    end
-
-    last_bin = lastindex(bins)
-    last_x = lastindex(X)
-
-    start = find_bin_index(first(bins), X)
-    if start >= last_x
-        # nothing to rebin
-        return output
-    end
-
-    # special case for first bin
-    if start > 1
-        x₁ = X[start-1]
-        x₂ = X[start]
-        b₁ = bins[1]
-
-        # find ratio of lengths
-        Δx = x₂ - x₁
-        Δb = x₂ - b₁
-        γ = min(Δb / Δx, 1)
-        output[1] += y[start-1] * (1 - γ)
-    end
-
-    for i = start:(last_x-1)
-        x₁ = X[i]
-        x₂ = X[i+1]
-
-        j = find_bin_index(x₁, bins)
-        if j > last_bin
-            break
-        end
-
-        b₂ = bins[j]
-
-        # find ratio of lengths
-        Δx = x₂ - x₁
-        Δb = b₂ - x₁
-        γ = min(Δb / Δx, 1)
-
-        output[j] = y[i] * γ + output[j]
-        # carry over if not at end
-        if j + 1 <= last_bin
-            output[j+1] = y[i] * (1 - γ) + output[j+1]
-        end
-    end
-    output
-end
-
-# Allocations
-
-function allocate_output(::DownSample, X, y::AbstractArray{T}, bins) where {T}
-    output = zeros(T, length(bins))
-    (output,)
-end
-
-function allocate_output(
-    ::AbstractBucketAlgorithm,
-    X,
-    y::AbstractArray{T},
-    bins;
-    kwargs...,
-) where {T}
-    output = zeros(T, length(bins))
-    noutput = similar(output)
-    (output, noutput)
-end
-
-function allocate_output(
-    ::AbstractBucketAlgorithm,
-    X1,
-    X2,
-    y::AbstractArray{T},
-    bins1,
-    bins2;
-    kwargs...,
-) where {T}
-    output = zeros(T, (length(bins1), length(bins2)))
-    noutput = similar(output)
-    (output, noutput)
-end
-
-# Allocating interface
-
-function bucket(alg::AbstractBucketAlgorithm, args...; kwargs...)
-    allocated_outputs = allocate_output(alg, args...; kwargs...)
-    bucket!(alg, allocated_outputs..., args...; kwargs...)
+function bucket(alg::AbstractBucketAlgorithm, args...; reduction = nothing, kwargs...)
+    out_bucket = allocate_output(alg, reduction, args...; kwargs...)
+    bucket!(out_bucket, alg, args...; kwargs...)
+    unpack_result(out_bucket)
 end
 
 """
@@ -303,6 +116,6 @@ and `bins1` (`bins2`) the bin edges for `X1` (`X2`).
 bucket(X1, X2, y, bins1, bins2; kwargs...) =
     bucket(Simple(), X1, X2, y, bins1, bins2; kwargs...)
 
-export bucket, bucket!, Simple, DownSample, AbstractBucketAlgorithm
+export bucket, AbstractBucketAlgorithm
 
 end # module Buckets
