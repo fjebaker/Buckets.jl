@@ -4,7 +4,7 @@ using Statistics
 
 export mean
 
-using Base.Threads: @threads
+using FLoops
 import Base.size
 
 abstract type AbstractBucketAlgorithm end
