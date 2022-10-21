@@ -1,11 +1,11 @@
 struct Simple <: AbstractBucketAlgorithm end
 
-function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractMatrix, bins1, bins2)
+function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractMatrix, bins1, bins2; ex=ThreadedEx())
     _check_bin_args(out_bucket, X1, X2, y, bins1, bins2)
     last_bin1 = lastindex(bins1)
     last_bin2 = lastindex(bins2)
 
-    @inbounds for i in eachindex(X1)
+    @inbounds @floop ex for i in eachindex(X1)
         bin_row = find_bin_index(X1[i], bins1, last_bin1)
         for j in eachindex(X2)
             bin_column = find_bin_index(X2[j], bins2, last_bin2)
@@ -22,13 +22,13 @@ function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractMatrix, bins1, bins2)
     out_bucket
 end
 
-function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractVector, bins1, bins2)
+function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractVector, bins1, bins2; ex=ThreadedEx())
     _check_bin_args(out_bucket, X1, X2, y, bins1, bins2)
 
     last_bin1 = lastindex(bins1)
     last_bin2 = lastindex(bins2)
 
-    @inbounds for i in eachindex(X1)
+    @inbounds @floop ex for i in eachindex(X1)
         bin_column = find_bin_index(X1[i], bins1, last_bin1)
         bin_row = find_bin_index(X2[i], bins2, last_bin2)
 
@@ -38,11 +38,11 @@ function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractVector, bins1, bins2)
     out_bucket
 end
 
-function bucket!(out_bucket, ::Simple, X, y, bins)
+function bucket!(out_bucket, ::Simple, X, y, bins; ex=ThreadedEx())
     _check_bin_args(out_bucket, X, y, bins)
     last_bin = lastindex(bins)
 
-    @inbounds for i in eachindex(X)
+    @inbounds @floop ex for i in eachindex(X)
         bin_index = find_bin_index(X[i], bins, last_bin)
 
         upsert!(out_bucket, bin_index, i, y[i])
@@ -71,7 +71,7 @@ splitting bins where they overlap a new bin edge.
 struct DownSample <: AbstractBucketAlgorithm end
 bucket_type(::Type{<:DownSample}) = SumBucket
 
-function bucket!(out_bucket, ::DownSample, X, y, bins)
+function bucket!(out_bucket, ::DownSample, X, y, bins; ex=ThreadedEx())
     _check_X_y_delta(X, y, 1)
     _check_bin_output_args(out_bucket, bins)
     _check_sorted(X)
@@ -90,38 +90,39 @@ function bucket!(out_bucket, ::DownSample, X, y, bins)
     end
 
     # special case for first bin
+    # use underscore to avoid boxed variables in the @floop
     if start > 1
-        x₁ = X[start-1]
-        x₂ = X[start]
-        b₁ = bins[1]
+        _x₁ = X[start-1]
+        _x₂ = X[start]
+        _b₁ = bins[1]
 
         # find ratio of lengths
-        Δx = x₂ - x₁
-        Δb = x₂ - b₁
-        γ = min(Δb / Δx, 1)
-        upsert!(out_bucket, 1, start - 1, y[start-1] * (1 - γ))
+        _Δx = _x₂ - _x₁
+        _Δb = _x₂ - _b₁
+        _γ = min(_Δb / _Δx, 1)
+        upsert!(out_bucket, 1, start - 1, y[start-1] * (1 - _γ))
     end
 
-    @inbounds for i = start:(last_x-1)
+    @inbounds @floop ex for i = start:(last_x-1)
         x₁ = X[i]
         x₂ = X[i+1]
 
         j = find_bin_index(x₁, bins)
         if j > last_bin
-            break
-        end
+            # ... hang around and wait for other threads
+        else
+            b₂ = bins[j]
 
-        b₂ = bins[j]
+            # find ratio of lengths
+            Δx = x₂ - x₁
+            Δb = b₂ - x₁
+            γ = min(Δb / Δx, 1)
 
-        # find ratio of lengths
-        Δx = x₂ - x₁
-        Δb = b₂ - x₁
-        γ = min(Δb / Δx, 1)
-
-        upsert!(out_bucket, j, i, y[i] * γ)
-        # carry over if not at end
-        if j + 1 <= last_bin
-            upsert!(out_bucket, j + 1, i, y[i] * (1 - γ))
+            upsert!(out_bucket, j, i, y[i] * γ)
+            # carry over if not at end
+            if j + 1 <= last_bin
+                upsert!(out_bucket, j + 1, i, y[i] * (1 - γ))
+            end
         end
     end
     out_bucket
