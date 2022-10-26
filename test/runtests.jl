@@ -1,5 +1,6 @@
 using Test
 using Buckets
+using Random
 
 @testset "simple" begin
     # generate known data
@@ -32,6 +33,29 @@ end
 
     y = ones(Float64, 20)
     @test_throws DimensionMismatch bucket(DownSample(), X, y, bins)
+end
+
+@testset "race-conditions" begin
+    Random.seed!(1)
+    X = collect(range(1.0, 10.0, 10_000))
+    shuffle!(X)
+    y = ones(Float64, length(X))
+    bins = 1:10
+
+    # default
+    y_binned = bucket(X, y, bins; reduction = sum)
+    @test y_binned ==
+          [1.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0]
+
+    # threaded sum
+    cache = ThreadBuckets(AggregateBucket, Float64, 10)
+    bucket!(cache, Simple(), X, y, bins)
+    @test unpack_bucket(cache) ==
+          [1.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0]
+
+    y_binned = bucket(ThreadedSimple(), X, y, bins; reduction = sum)
+    @test y_binned ==
+          [1.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0, 1111.0]
 end
 
 # little bit of aqua

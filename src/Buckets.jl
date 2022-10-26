@@ -1,13 +1,13 @@
 module Buckets
 
-using Statistics
+import Base.size
+import Base.merge!
 
+using Statistics
 export mean
 
-using FLoops
-import Base.size
-
 abstract type AbstractBucketAlgorithm end
+abstract type AbstractThreadedBucketAlgorithm <: AbstractBucketAlgorithm end
 
 include("valuebucket.jl")
 include("algorithms.jl")
@@ -85,8 +85,8 @@ end
 
 function bucket(alg::AbstractBucketAlgorithm, args...; reduction = nothing, kwargs...)
     out_bucket = allocate_output(alg, reduction, args...; kwargs...)
-    bucket!(out_bucket, alg, args...; kwargs...)
-    unpack_result(out_bucket)
+    bucket!(out_bucket, _algorithm(alg), args...; kwargs...)
+    unpack_bucket(out_bucket)
 end
 
 """
