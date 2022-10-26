@@ -1,11 +1,27 @@
-struct Simple <: AbstractBucketAlgorithm end
+_algorithm(T::Type{<:AbstractThreadedBucketAlgorithm}) = error("Not defined for $T")
+_algorithm(::T) where {T<:AbstractThreadedBucketAlgorithm} = _algorithm(T)
+_algorithm(B::AbstractBucketAlgorithm) = B
 
-function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractMatrix, bins1, bins2; ex=ThreadedEx())
+struct Simple <: AbstractBucketAlgorithm end
+struct ThreadedSimple <: AbstractThreadedBucketAlgorithm end
+_algorithm(::Type{<:ThreadedSimple}) = Simple()
+
+macro optionally_threaded(bucket, expr)
+    quote
+        if typeof($(bucket)) <: ThreadBuckets
+            @inbounds Threads.@threads :dynamic $(expr)
+        else
+            @inbounds $(expr)
+        end
+    end |> esc
+end
+
+function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractMatrix, bins1, bins2)
     _check_bin_args(out_bucket, X1, X2, y, bins1, bins2)
     last_bin1 = lastindex(bins1)
     last_bin2 = lastindex(bins2)
 
-    @inbounds @floop ex for i in eachindex(X1)
+    @optionally_threaded out_bucket for i in eachindex(X1)
         bin_row = find_bin_index(X1[i], bins1, last_bin1)
         for j in eachindex(X2)
             bin_column = find_bin_index(X2[j], bins2, last_bin2)
@@ -22,13 +38,13 @@ function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractMatrix, bins1, bins2; 
     out_bucket
 end
 
-function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractVector, bins1, bins2; ex=ThreadedEx())
+function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractVector, bins1, bins2)
     _check_bin_args(out_bucket, X1, X2, y, bins1, bins2)
 
     last_bin1 = lastindex(bins1)
     last_bin2 = lastindex(bins2)
 
-    @inbounds @floop ex for i in eachindex(X1)
+    @optionally_threaded out_bucket for i in eachindex(X1)
         bin_column = find_bin_index(X1[i], bins1, last_bin1)
         bin_row = find_bin_index(X2[i], bins2, last_bin2)
 
@@ -38,11 +54,11 @@ function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractVector, bins1, bins2; 
     out_bucket
 end
 
-function bucket!(out_bucket, ::Simple, X, y, bins; ex=ThreadedEx())
+function bucket!(out_bucket, ::Simple, X, y, bins)
     _check_bin_args(out_bucket, X, y, bins)
     last_bin = lastindex(bins)
 
-    @inbounds @floop ex for i in eachindex(X)
+    @optionally_threaded out_bucket for i in eachindex(X)
         bin_index = find_bin_index(X[i], bins, last_bin)
 
         upsert!(out_bucket, bin_index, i, y[i])
@@ -69,9 +85,11 @@ splitting bins where they overlap a new bin edge.
 ```
 """
 struct DownSample <: AbstractBucketAlgorithm end
-bucket_type(::Type{<:DownSample}) = SumBucket
+bucket_type(::Type{<:DownSample}) = AggregateBucket
+struct ThreadedDownSample <: AbstractThreadedBucketAlgorithm end
+_algorithm(::Type{<:ThreadedDownSample}) = DownSample()
 
-function bucket!(out_bucket, ::DownSample, X, y, bins; ex=ThreadedEx())
+function bucket!(out_bucket, ::DownSample, X, y, bins)
     _check_X_y_delta(X, y, 1)
     _check_bin_output_args(out_bucket, bins)
     _check_sorted(X)
@@ -103,7 +121,7 @@ function bucket!(out_bucket, ::DownSample, X, y, bins; ex=ThreadedEx())
         upsert!(out_bucket, 1, start - 1, y[start-1] * (1 - _γ))
     end
 
-    @inbounds @floop ex for i = start:(last_x-1)
+    @optionally_threaded out_bucket for i = start:(last_x-1)
         x₁ = X[i]
         x₂ = X[i+1]
 
@@ -128,4 +146,4 @@ function bucket!(out_bucket, ::DownSample, X, y, bins; ex=ThreadedEx())
     out_bucket
 end
 
-export bucket!, Simple, DownSample
+export bucket!, Simple, ThreadedSimple, DownSample, ThreadedDownSample
