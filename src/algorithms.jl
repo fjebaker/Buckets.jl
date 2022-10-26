@@ -9,7 +9,7 @@ _algorithm(::Type{<:ThreadedSimple}) = Simple()
 macro optionally_threaded(bucket, expr)
     quote
         if typeof($(bucket)) <: ThreadBuckets
-            @inbounds Threads.@threads :dynamic $(expr)
+            @inbounds Threads.@threads $(expr)
         else
             @inbounds $(expr)
         end
