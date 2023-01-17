@@ -18,13 +18,13 @@ end
 
 function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractMatrix, bins1, bins2)
     _check_bin_args(out_bucket, X1, X2, y, bins1, bins2)
-    last_bin1 = lastindex(bins1)
-    last_bin2 = lastindex(bins2)
+    last_bin_index1 = lastindex(bins1)
+    last_bin_index2 = lastindex(bins2)
 
     @optionally_threaded out_bucket for i in eachindex(X1)
-        bin_row = find_bin_index(X1[i], bins1, last_bin1)
+        bin_row = find_bin_index(X1[i], bins1, last_bin_index1)
         for j in eachindex(X2)
-            bin_column = find_bin_index(X2[j], bins2, last_bin2)
+            bin_column = find_bin_index(X2[j], bins2, last_bin_index2)
 
             upsert!(
                 out_bucket,
@@ -41,12 +41,12 @@ end
 function bucket!(out_bucket, ::Simple, X1, X2, y::AbstractVector, bins1, bins2)
     _check_bin_args(out_bucket, X1, X2, y, bins1, bins2)
 
-    last_bin1 = lastindex(bins1)
-    last_bin2 = lastindex(bins2)
+    last_bin_index1 = lastindex(bins1)
+    last_bin_index2 = lastindex(bins2)
 
     @optionally_threaded out_bucket for i in eachindex(X1)
-        bin_column = find_bin_index(X1[i], bins1, last_bin1)
-        bin_row = find_bin_index(X2[i], bins2, last_bin2)
+        bin_column = find_bin_index(X1[i], bins1, last_bin_index1)
+        bin_row = find_bin_index(X2[i], bins2, last_bin_index2)
 
         upsert!(out_bucket, CartesianIndex(bin_column, bin_row), i, y[i])
     end
@@ -56,10 +56,10 @@ end
 
 function bucket!(out_bucket, ::Simple, X, y, bins)
     _check_bin_args(out_bucket, X, y, bins)
-    last_bin = lastindex(bins)
+    last_bin_index = lastindex(bins)
 
     @optionally_threaded out_bucket for i in eachindex(X)
-        bin_index = find_bin_index(X[i], bins, last_bin)
+        bin_index = find_bin_index(X[i], bins, last_bin_index)
 
         upsert!(out_bucket, bin_index, i, y[i])
     end
@@ -98,7 +98,7 @@ function bucket!(out_bucket, ::DownSample, X, y, bins)
         error("DownSample requires length of bins to be less than or equal to length of X.")
     end
 
-    last_bin = lastindex(bins)
+    last_bin_index = lastindex(bins)
     last_x = lastindex(X)
 
     start = find_bin_index(first(bins), X)
@@ -126,7 +126,7 @@ function bucket!(out_bucket, ::DownSample, X, y, bins)
         x₂ = X[i+1]
 
         j = find_bin_index(x₁, bins)
-        if j > last_bin
+        if j > last_bin_index
             # ... hang around and wait for other threads
         else
             b₂ = bins[j]
@@ -138,7 +138,7 @@ function bucket!(out_bucket, ::DownSample, X, y, bins)
 
             upsert!(out_bucket, j, i, y[i] * γ)
             # carry over if not at end
-            if j + 1 <= last_bin
+            if j + 1 <= last_bin_index
                 upsert!(out_bucket, j + 1, i, y[i] * (1 - γ))
             end
         end
