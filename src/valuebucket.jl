@@ -71,9 +71,9 @@ end
 """
 Count as well as summing output
 """
-struct CountBucket{T,Int} <: AbstractValueBucket{T}
-    ncounts::Vector{Int}
-    output::Vector{T}
+struct CountBucket{T,Tcount} <: AbstractValueBucket{T}
+    output::T
+    ncounts::Tcount
 end
 
 CountBucket(::Type{T}, dims) where {T} = CountBucket(zeros(Int, dims), zeros(T, dims))
@@ -90,7 +90,7 @@ unpack_bucket(b::CountBucket) = @. b.output / b.ncounts
 Just sum the output
 """
 struct AggregateBucket{T} <: AbstractValueBucket{T}
-    output::Vector{T}
+    output::T
 end
 
 AggregateBucket(::Type{T}, dims) where {T} = AggregateBucket(zeros(T, dims))
@@ -106,7 +106,7 @@ unpack_bucket(b::AggregateBucket) = b.output
 Track which index the elements should go into
 """
 struct IndexBucket{T} <: AbstractValueBucket{T}
-    indices::Vector{Int}
+    indices::T
 end
 
 IndexBucket(::Type{T}, dims) where {T} = IndexBucket{T}(zeros(Int, dims))
