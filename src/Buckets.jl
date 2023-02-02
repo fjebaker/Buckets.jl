@@ -14,7 +14,8 @@ include("algorithms.jl")
 
 
 @inline function find_bin_index(x, bins)
-    searchsortedfirst(bins, x)
+    i = searchsortedfirst(bins, x) - 1
+    i < 1 ? 1 : i
 end
 
 @inline function find_bin_index(x, bins, last_bin)

@@ -125,7 +125,7 @@ function bucket!(out_bucket, ::DownSample, X, y, bins)
         x₁ = X[i]
         x₂ = X[i+1]
 
-        j = find_bin_index(x₁, bins)
+        j = find_bin_index(x₁, bins) + 1
         if j > last_bin_index
             # ... hang around and wait for other threads
         else
