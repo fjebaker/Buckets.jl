@@ -32,7 +32,7 @@ end
         2.1111111111111107,
         0.0,
     ]
-    @test sum(y_binned) == sum(y)
+    @test sum(y_binned) ≈ sum(y)
 
     y = ones(Float64, 20)
     @test_throws DimensionMismatch bucket(DownSample(), X, y, bins)
