@@ -67,6 +67,18 @@ function bucket!(out_bucket, ::Simple, X, y, bins)
     out_bucket
 end
 
+function bucket!(out_bucket, ::Simple, X, bins)
+    _check_bin_output_args(out_bucket, bins)
+    last_bin_index = lastindex(bins)
+
+    @optionally_threaded out_bucket for i in eachindex(X)
+        bin_index = find_bin_index(X[i], bins, last_bin_index)
+
+        upsert!(out_bucket, bin_index, i, 1)
+    end
+
+    out_bucket
+end
 
 """
     bucket!(::DownSample, output, X, y, bins)
