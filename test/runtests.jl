@@ -13,6 +13,13 @@ using Random
     @test y_binned == [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]
 end
 
+@testset "simple-count" begin
+    X = collect(range(1.1, 10.6, step = 0.5)) 
+    bins = 1:11
+    y_binned = bucket(X, bins)
+    @test y_binned == [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 0.0]
+end
+
 @testset "down-sample" begin
     # generate known data
     X = collect(range(1.0, 10.0, 20))
