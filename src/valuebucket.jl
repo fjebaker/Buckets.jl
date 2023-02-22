@@ -89,7 +89,7 @@ CountBucket(::Type{T}, dims) where {T} = CountBucket(zeros(Int, dims), zeros(T, 
 end
 
 Base.size(b::CountBucket) = size(b.output)
-function unpack_bucket(b::CountBucket) 
+function unpack_bucket(b::CountBucket)
     [n > 0 ? o / n : 0 for (n, o) in zip(b.output, b.ncounts)]
 end
 
