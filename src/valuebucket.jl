@@ -9,6 +9,11 @@ allocate_output(alg::AbstractBucketAlgorithm, reduction, args...) =
 allocate_output(alg::AbstractThreadedBucketAlgorithm, reduction, args...) =
     _allocate_output(ThreadBuckets{_bucket_for_reduction(alg, reduction)}, args...)
 
+function _allocate_output(B, X::AbstractArray{T}, bins) where {T}
+    dims = length(bins)
+    B(T, dims)
+end
+
 function _allocate_output(B, X, y::AbstractArray{T}, bins) where {T}
     dims = length(bins)
     B(T, dims)
@@ -49,10 +54,10 @@ struct ThreadBuckets{B,T} <: AbstractValueBucket{T}
         end
         new{T,T.parameters[1]}(buckets)
     end
+end
 
-    @inline function ThreadBuckets{B}(args...; kwargs...) where {B}
-        ThreadBuckets(B, args...; kwargs...)
-    end
+@inline function ThreadBuckets{B}(args...; kwargs...) where {B}
+    ThreadBuckets(B, args...; kwargs...)
 end
 
 @inline @inbounds function upsert!(b::ThreadBuckets, bin, i, yᵢ)
@@ -85,7 +90,7 @@ end
 
 Base.size(b::CountBucket) = size(b.output)
 function unpack_bucket(b::CountBucket)
-    [n > 0 ? o / n : 0.0 for (n, o) in zip(b.output, b.ncounts)]
+    [n > 0 ? o / n : 0 for (n, o) in zip(b.output, b.ncounts)]
 end
 
 """

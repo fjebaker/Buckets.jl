@@ -91,10 +91,17 @@ function bucket(alg::AbstractBucketAlgorithm, args...; reduction = nothing, kwar
 end
 
 """
-    bucket(X, y, bins; kwargs...)
+    bucket(X, bins; kwargs...)
     bucket(alg::AbstractBucketAlgorithm, args...; kwargs...)
 
 Defaults to the [`Simple`](@ref) algorithm if `alg` unspecified.
+
+Bin by frequency `X` into `bins`.
+"""
+bucket(X, bins; kwargs...) = bucket(Simple(), X, bins; kwargs...)
+
+"""
+    bucket(X, y, bins; kwargs...)
 
 Bin data in `y` by `X` into `bins`, that is to say, reduce the `y` data corresponding to coordinates `X` over
 domain ranges given by `bins`. 
