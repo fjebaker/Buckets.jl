@@ -20,6 +20,20 @@ end
     @test y_binned == [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 0.0]
 end
 
+@testset "simple-index" begin
+    # generate known data
+    X = collect(range(1.1, 10.6, step = 0.5))
+    y = ones(Float64, length(X))
+    bins = 1:11
+
+    outbucket = Buckets.IndexBucket(Int64, size(X))
+    bucket!(outbucket, Simple(), X, bins)
+    @test outbucket.indices == [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10]
+
+    groups = unpack_bucket(outbucket)
+    @test groups == [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18], [19, 20]]
+end
+
 @testset "down-sample" begin
     # generate known data
     X = collect(range(1.0, 10.0, 20))
