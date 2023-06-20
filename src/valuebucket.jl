@@ -116,14 +116,26 @@ struct IndexBucket{T} <: AbstractValueBucket{T}
     indices::T
 end
 
-IndexBucket(::Type{T}, dims) where {T} = IndexBucket{T}(zeros(Int, dims))
+IndexBucket(::Type, dims) = IndexBucket(zeros(Int, dims))
 
 @inline @inbounds function upsert!(b::IndexBucket, bin, i, _)
     b.indices[i] = bin
 end
 
 Base.size(b::IndexBucket) = size(b.indices)
-unpack_bucket(b::IndexBucket) = b.indices
+function unpack_bucket(b::IndexBucket)
+    N = maximum(b.indices)
+    binning = [Int[] for _ in 1:N]
+    for (i, v) in enumerate(b.indices)
+        push!(binning[v], i)
+    end
+    binning
+end
+
+# special case for index bucket
+function _check_bin_output_args(::IndexBucket, bins)
+    _check_sorted(bins)
+end
 
 bucket_type(::Type{<:AbstractBucketAlgorithm}) = AggregateBucket
 bucket_type(::A) where {A<:AbstractBucketAlgorithm} = bucket_type(A)
