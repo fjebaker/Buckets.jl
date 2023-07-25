@@ -114,9 +114,13 @@ Track which index the elements should go into
 """
 struct IndexBucket{T} <: AbstractValueBucket{T}
     indices::T
+    N::Int
+    IndexBucket(indices::T, N::Int) where {T<:AbstractArray} = new{T}(indices, N)
 end
 
-IndexBucket(::Type, dims) = IndexBucket(zeros(Int, dims))
+IndexBucket(T::Type{<:Integer}, dims, N::Int) = IndexBucket(zeros(T, dims), N)
+IndexBucket(::Type, dims, N) = error("IndexBucket can only use `Integer` types.")
+
 
 @inline @inbounds function upsert!(b::IndexBucket, bin, i, _)
     b.indices[i] = bin
@@ -124,8 +128,7 @@ end
 
 Base.size(b::IndexBucket) = size(b.indices)
 function unpack_bucket(b::IndexBucket)
-    N = maximum(b.indices)
-    binning = [Int[] for _ in 1:N]
+    binning = [Int[] for _ = 1:b.N]
     for (i, v) in enumerate(b.indices)
         push!(binning[v], i)
     end
