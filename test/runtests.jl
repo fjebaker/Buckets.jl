@@ -26,12 +26,108 @@ end
     y = ones(Float64, length(X))
     bins = 1:11
 
-    outbucket = Buckets.IndexBucket(Int64, size(X))
+    outbucket = Buckets.IndexBucket(Int64, size(X), length(bins))
     bucket!(outbucket, Simple(), X, bins)
-    @test outbucket.indices == [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10]
+    @test outbucket.indices ==
+          [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10]
 
     groups = unpack_bucket(outbucket)
-    @test groups == [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18], [19, 20]]
+    @test groups == [
+        [1, 2],
+        [3, 4],
+        [5, 6],
+        [7, 8],
+        [9, 10],
+        [11, 12],
+        [13, 14],
+        [15, 16],
+        [17, 18],
+        [19, 20],
+        Int64[],
+    ]
+    @test length(groups) == length(bins)
+end
+
+@testset "simple-index-out-of-bin" begin
+    # generate known data that is out of range of the bins
+    X = collect(range(-1.0, 12.6, step = 0.5))
+    y = ones(Float64, length(X))
+    bins = 1:11
+
+    outbucket = Buckets.IndexBucket(Int64, size(X), length(bins))
+    bucket!(outbucket, Simple(), X, bins)
+    @test outbucket.indices == [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        3,
+        3,
+        4,
+        4,
+        5,
+        5,
+        6,
+        6,
+        7,
+        7,
+        8,
+        8,
+        9,
+        9,
+        10,
+        10,
+        11,
+        11,
+        11,
+    ]
+
+    groups = unpack_bucket(outbucket)
+    @test groups == [
+        [1, 2, 3, 4, 5, 6, 7],
+        [8, 9],
+        [10, 11],
+        [12, 13],
+        [14, 15],
+        [16, 17],
+        [18, 19],
+        [20, 21],
+        [22, 23],
+        [24, 25],
+        [26, 27, 28],
+    ]
+    @test length(groups) == length(bins)
+end
+
+@testset "simple-bin-bigger-than-indexes" begin
+    X = collect(range(-1.0, 4.0, step = 0.5))
+    y = ones(Float64, length(X))
+    bins = 1:11
+
+    outbucket = Buckets.IndexBucket(Int64, size(X), length(bins))
+    bucket!(outbucket, Simple(), X, bins)
+    @test outbucket.indices == [1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3]
+
+    groups = unpack_bucket(outbucket)
+    @test groups == [
+        [1, 2, 3, 4, 5, 6, 7],
+        [8, 9],
+        [10, 11],
+        Int64[],
+        Int64[],
+        Int64[],
+        Int64[],
+        Int64[],
+        Int64[],
+        Int64[],
+        Int64[],
+    ]
+    @test length(groups) == length(bins)
 end
 
 @testset "down-sample" begin
