@@ -81,7 +81,7 @@ struct CountBucket{T,Tcount} <: AbstractValueBucket{T}
     ncounts::Tcount
 end
 
-CountBucket(::Type{T}, dims) where {T} = CountBucket(zeros(Int, dims), zeros(T, dims))
+CountBucket(::Type{T}, dims) where {T} = CountBucket(zeros(T, dims), zeros(Int, dims))
 
 @inline @inbounds function upsert!(b::CountBucket, bin, i, yᵢ)
     b.output[bin] += yᵢ

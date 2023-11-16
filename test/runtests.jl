@@ -177,6 +177,26 @@ end
     @test y_binned == expected
 end
 
+
+@testset "#13" begin
+    X = [58120.5, 58121.5, 58123.5, 58124.5, 58125.5]
+    y = [
+        -0.00013285555791675628,
+        0.0007222660213649527,
+        0.00027540938576390173,
+        0.00011658070990990752,
+        -2.691830320163596e-6,
+    ]
+    bins = [
+        58120.5,
+        58140.64473684211,
+        58160.78947368421,
+        58180.93421052631,
+        58201.07894736842,
+    ]
+    y_binned = bucket(X, y, bins; reduction = mean)
+end
+
 # little bit of aqua
 using Aqua
 Aqua.test_undefined_exports(Buckets)
