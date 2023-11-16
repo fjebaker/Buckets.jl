@@ -194,7 +194,7 @@ end
         58201.07894736842,
     ]
     y_binned = bucket(X, y, bins; reduction = mean)
-    @test y_binned ≈ [0.00019574174576036845, 0, 0, 0, 0] atol = 1e-3
+    @test y_binned ≈ [0.00019574174576036845, 0, 0, 0, 0] rtol = 1e-3
 end
 
 @testset "mean" begin
