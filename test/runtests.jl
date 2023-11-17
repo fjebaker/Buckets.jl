@@ -177,7 +177,6 @@ end
     @test y_binned == expected
 end
 
-
 @testset "#13" begin
     X = [58120.5, 58121.5, 58123.5, 58124.5, 58125.5]
     y = [
@@ -195,6 +194,18 @@ end
         58201.07894736842,
     ]
     y_binned = bucket(X, y, bins; reduction = mean)
+    @test y_binned ≈ [0.00019574174576036845, 0, 0, 0, 0] rtol = 1e-3
+end
+
+@testset "mean" begin
+    # generate known data
+    X = collect(range(1.1, 10.6, step = 0.5))
+    y = collect(1.0:length(X))
+    bins = 1:11
+    y_binned = bucket(X, y, bins; reduction = sum)
+    @test y_binned ≈ [3.0, 7.0,11.0,15.0,19.0,23.0,27.0,31.0,35.0,39.0, 0.0] rtol = 1e-3
+    y_binned = bucket(X, y, bins; reduction = mean)
+    @test y_binned ≈ [1.5, 3.5, 5.5, 7.5, 9.5,11.5,13.5,15.5,17.5,19.5, 0] rtol = 1e-3
 end
 
 # little bit of aqua

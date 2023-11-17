@@ -90,7 +90,7 @@ end
 
 Base.size(b::CountBucket) = size(b.output)
 function unpack_bucket(b::CountBucket)
-    [n > 0 ? o / n : 0 for (n, o) in zip(b.output, b.ncounts)]
+    [n > 0 ? o / n : 0 for (o, n) in zip(b.output, b.ncounts)]
 end
 
 """
